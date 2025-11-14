@@ -9,6 +9,6 @@ const userSchema = mongoose.Schema({
     password: {type: String, required: true}
 })
 
-const userModel = mongoose.model('snore-detection-users', userSchema)
+const userModel = mongoose.model('san-ats-v1-user', userSchema)
 
 module.exports = userModel
