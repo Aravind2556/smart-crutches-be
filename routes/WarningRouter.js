@@ -6,8 +6,8 @@ const nodemailer = require('nodemailer');
 
 const {
     url,
+    urlTwo,
     temperatureRange,
-    batteryPercentageRange,
     spo2Range,
     minHeartRateRange,
     maxHeartRateRange
@@ -107,7 +107,7 @@ async function sendAlertEmail(allFields, gpsString) {
 
     try {
         await transporter.sendMail({
-            from: ALERT_EMAIL,
+            from: ALERT_EMAIL, 
             to: ALERT_TO,
             subject: "⚠ Sensor Alert",
             html: htmlMessage
@@ -128,47 +128,63 @@ async function sendAlertEmail(allFields, gpsString) {
 }
 
 // ---------------- CHECK DATA ------------------------
-
 async function checkData() {
     try {
-        const res = await axios.get(url);
-        const data = res.data;
+        const [res1, res2] = await Promise.all([
+            axios.get(url),
+            axios.get(urlTwo)
+        ]);
 
-        if (!data?.feeds?.length) return;
+        const feeds1 = res1?.data?.feeds || [];
+        const feeds2 = res2?.data?.feeds || [];
 
-        const recent = data.feeds[data.feeds.length - 1];
+        if (feeds1.length === 0 || feeds2.length === 0) return;
 
-        // Parse values
-        const temperature = Number(recent.field2 ?? 0);
-        const fallDetected = Number(recent.field3 ?? 0);
-        const stepCount = Number(recent.field4 ?? 0);
-        const battery = Number(recent.field5 ?? 0);
-        const heartRate = Number(recent.field6 ?? 0);
-        const spo2 = Number(recent.field7 ?? 0);
-        const gps = recent.field8 ?? "";   // FIXED
+        // Latest data points
+        const recent1 = feeds1[feeds1.length - 1];
+        const recent2 = feeds2[feeds2.length - 1];
 
+        // Extract values from Device 1
+        const force = Number(recent1.field1);
+        const temperature = Number(recent1.field2 );
+        const fallDetected = Number(recent1.field3);
+        const stepCount = Number(recent1.field4);
+        const walkingSpeed = Number(recent1.field5 );
+        const heartRate = Number(recent1.field6);
+        const spo2 = Number(recent1.field7);
+        const sos = Number(recent1.field8);
+
+        // Extract GPS from Device 2
+        const gps = recent2.field1;
+
+        // For email
         const fields = {
-            "Temperature": temperature,
+            Force: force,
+            Temperature: temperature,
             "Fall detected": fallDetected,
             "Step count": stepCount,
-            "Battery percentage": battery,
+            "Walking Speed": walkingSpeed,
             "Heart rate": heartRate,
-            "Spo2": spo2
+            Spo2: spo2,
+            SOS: sos
         };
 
-        // Violations
-        let violated = false;
-        if (temperature >= temperatureRange) violated = true;
-        if (battery <= batteryPercentageRange) violated = true;
-        if (spo2 <= spo2Range) violated = true;
-        if (heartRate <= minHeartRateRange || heartRate >= maxHeartRateRange) violated = true;
-        if (fallDetected === 1) violated = true;
+        // Alerts
+        const violation =
+            temperature >= temperatureRange ||
+            spo2 <= spo2Range ||
+            heartRate <= minHeartRateRange ||
+            heartRate >= maxHeartRateRange ||
+            fallDetected === 1 ||
+            sos === 1;  
 
-        if (violated) {
+        if (violation) {
             console.log("🚨 Violations found!");
+
             if (canSendEmail) {
                 await sendAlertEmail(fields, gps);
             }
+
         } else {
             console.log("✔ All values normal.");
         }
@@ -178,9 +194,11 @@ async function checkData() {
     }
 }
 
+
+
 // ---------------- POLLING START --------------------
 
-if (url) {
+if (url || urlTwo) {
     console.log(`✔ Polling ThinkSpeak every ${POLL_INTERVAL_MS}ms`);
     checkData();
     setInterval(checkData, POLL_INTERVAL_MS);
